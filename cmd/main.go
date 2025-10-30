@@ -264,6 +264,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if m.inputField < 4 {
 					m.inputField++
 				}
+			case " ":
+				m.inputs[m.inputField] = ""
+			case "tab":
+				m.inputField = (m.inputField + 1) % 5
 			case "enter":
 				// Tenta conectar e listar bancos
 				databases, err := listDatabases(m.inputs[0], m.inputs[1], m.inputs[2], m.inputs[3], m.inputs[4])
@@ -279,12 +283,16 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if len(m.inputs[m.inputField]) > 0 {
 					m.inputs[m.inputField] = m.inputs[m.inputField][:len(m.inputs[m.inputField])-1]
 				}
+			case "esc":
+				m.screen = screenMenu
+				m.cursor = 0
 			default:
 				// Adiciona caracteres ao campo atual
 				if len(msg.String()) == 1 {
 					m.inputs[m.inputField] += msg.String()
 				}
 			}
+
 		case screenMenu:
 			switch msg.String() {
 			case "ctrl+c", "q":
@@ -332,6 +340,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.cursor = 0
 				}
 			}
+
 		case screenBackupList:
 			switch msg.String() {
 			case "ctrl+c", "q":
@@ -591,7 +600,7 @@ func renderConnection(m model) string {
 		s += "\n\n"
 	}
 
-	s += "\n[↑ ↓] Navegar   [Enter] Conectar   [Q] Sair\n"
+	s += "\n[↑ ↓ tab] Navegar   [Espaço] Selecionar   [Enter] Conectar   [Q] Sair\n"
 
 	return s
 }
