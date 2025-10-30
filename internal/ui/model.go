@@ -1,7 +1,11 @@
 package ui
 
 import (
+	"strings"
+
+	"github.com/charmbracelet/bubbles/paginator"
 	"github.com/charmbracelet/bubbles/spinner"
+	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
@@ -21,30 +25,48 @@ type App struct {
 
 // NewApp creates a new application instance
 func NewApp() *App {
+	// Initialize spinner
 	s := spinner.New()
 	s.Spinner = spinner.Dot
 	s.Style = lipgloss.NewStyle().Foreground(lipgloss.Color(config.ColorPrimary))
 
+	// Initialize search input
+	ti := textinput.New()
+	ti.Placeholder = "pesquise aqui..."
+	ti.CharLimit = 40
+	ti.Width = 40
+
+	// Initialize paginator
+	p := paginator.New()
+	p.Type = paginator.Arabic
+	p.PerPage = 15
+	p.ActiveDot = lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "235", Dark: "252"}).Render("•")
+	p.InactiveDot = lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "250", Dark: "238"}).Render("•")
+
 	model := types.Model{
-		Screen:          types.ScreenConnection,
-		Cursor:          0,
-		Options:         []string{"Fazer Backup", "Restaurar Backup", "Configurar Conexão", "Sair"},
-		Databases:       []string{},
-		Choices:         make(map[int]string),
-		DbHost:          config.DefaultHost,
-		DbPort:          config.DefaultPort,
-		DbUser:          "",
-		DbPassword:      "",
-		DbName:          config.DefaultDatabase,
-		InputField:      0,
-		Inputs:          []string{config.DefaultHost, config.DefaultPort, "", "", config.DefaultDatabase},
-		Spinner:         s,
-		BackupCompleted: false,
-		BackupErrors:    []string{},
-		BackupSuccess:   0,
-		BackupFilenames: []string{},
-		TotalBackups:    0,
-		IsProcessing:    false,
+		Screen:            types.ScreenConnection,
+		Cursor:            0,
+		Options:           []string{"Fazer Backup", "Restaurar Backup", "Configurar Conexão", "Sair"},
+		Databases:         []string{},
+		FilteredDatabases: []string{},
+		Choices:           make(map[int]string),
+		DbHost:            config.DefaultHost,
+		DbPort:            config.DefaultPort,
+		DbUser:            "",
+		DbPassword:        "",
+		DbName:            config.DefaultDatabase,
+		InputField:        0,
+		Inputs:            []string{config.DefaultHost, config.DefaultPort, "", "", config.DefaultDatabase},
+		Spinner:           s,
+		SearchInput:       ti,
+		Paginator:         p,
+		SearchMode:        false,
+		BackupCompleted:   false,
+		BackupErrors:      []string{},
+		BackupSuccess:     0,
+		BackupFilenames:   []string{},
+		TotalBackups:      0,
+		IsProcessing:      false,
 	}
 
 	return &App{
@@ -74,6 +96,15 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.model.Spinner, cmd = a.model.Spinner.Update(msg)
 		return a, cmd
 	case tea.KeyMsg:
+		// Handle search input updates when in search mode and backup list screen
+		if a.model.Screen == types.ScreenBackupList && a.model.SearchMode {
+			oldValue := a.model.SearchInput.Value()
+			a.model.SearchInput, _ = a.model.SearchInput.Update(msg)
+			// Update filtered databases if search changed
+			if a.model.SearchInput.Value() != oldValue {
+				a.updateFilteredDatabases()
+			}
+		}
 		return a.handleKeyPress(msg)
 	}
 
@@ -140,6 +171,12 @@ func (a *App) handleConnectionKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		// Add "All Databases" at the beginning
 		a.model.Databases = append([]string{"All Databases"}, databases...)
+		a.model.FilteredDatabases = a.model.Databases
+
+		// Initialize paginator properly
+		a.model.Paginator.SetTotalPages(len(a.model.Databases))
+		a.model.Paginator.Page = 0
+
 		a.model.Screen = types.ScreenMenu
 		a.model.Cursor = 0
 	case "backspace":
@@ -212,6 +249,25 @@ func (a *App) handleBackupProgressKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 // handleBackupListKeys processes keys for the database selection screen
 func (a *App) handleBackupListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	// If in search mode, handle search-specific keys
+	if a.model.SearchMode {
+		switch msg.String() {
+		case "esc":
+			// Exit search mode
+			a.model.SearchMode = false
+			a.model.SearchInput.Blur()
+			return a, nil
+		case "enter":
+			// Exit search mode and apply filter
+			a.model.SearchMode = false
+			a.model.SearchInput.Blur()
+			return a, nil
+		}
+		// Let the search input handle other keys
+		return a, nil
+	}
+
+	// Regular navigation mode
 	switch msg.String() {
 	case "ctrl+c", "q":
 		return a, tea.Quit
@@ -219,14 +275,28 @@ func (a *App) handleBackupListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// Return to menu
 		a.model.Screen = types.ScreenMenu
 		a.model.Cursor = 0
+	case "/":
+		// Enter search mode
+		a.model.SearchMode = true
+		a.model.SearchInput.Focus()
+		return a, nil
 	case "up", "k":
 		if a.model.Cursor > 0 {
 			a.model.Cursor--
 		}
 	case "down", "j":
-		if a.model.Cursor < len(a.model.Databases)-1 {
+		currentPageDatabases := a.getCurrentPageDatabases()
+		if len(currentPageDatabases) > 0 && a.model.Cursor < len(currentPageDatabases)-1 {
 			a.model.Cursor++
 		}
+	case "left", "h", "pgup":
+		// Previous page
+		a.model.Paginator.PrevPage()
+		a.model.Cursor = 0
+	case "right", "l", "pgdown":
+		// Next page
+		a.model.Paginator.NextPage()
+		a.model.Cursor = 0
 	case " ":
 		return a.handleDatabaseSelection()
 	case "enter":
@@ -252,7 +322,28 @@ func (a *App) handleBackupListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 // handleDatabaseSelection handles database selection/deselection logic
 func (a *App) handleDatabaseSelection() (tea.Model, tea.Cmd) {
-	if a.model.Cursor == 0 { // "All Databases"
+	currentPageDatabases := a.getCurrentPageDatabases()
+	if len(currentPageDatabases) == 0 {
+		return a, nil
+	}
+
+	// Get the actual database from the current page
+	selectedDB := currentPageDatabases[a.model.Cursor]
+
+	// Find the index in the original database list
+	selectedIndex := -1
+	for i, db := range a.model.Databases {
+		if db == selectedDB {
+			selectedIndex = i
+			break
+		}
+	}
+
+	if selectedIndex == -1 {
+		return a, nil
+	}
+
+	if selectedIndex == 0 { // "All Databases"
 		// Check if all individual databases are selected
 		allSelected := true
 		for i := 1; i < len(a.model.Databases); i++ {
@@ -275,13 +366,12 @@ func (a *App) handleDatabaseSelection() (tea.Model, tea.Cmd) {
 		}
 	} else {
 		// Individual database
-		db := a.model.Databases[a.model.Cursor]
-		if _, ok := a.model.Choices[a.model.Cursor]; ok {
-			delete(a.model.Choices, a.model.Cursor)
+		if _, ok := a.model.Choices[selectedIndex]; ok {
+			delete(a.model.Choices, selectedIndex)
 			// Remove "All Databases" if it was selected
 			delete(a.model.Choices, 0)
 		} else {
-			a.model.Choices[a.model.Cursor] = db
+			a.model.Choices[selectedIndex] = selectedDB
 
 			// Check if all individual databases are now selected
 			allIndividualSelected := true
@@ -298,4 +388,70 @@ func (a *App) handleDatabaseSelection() (tea.Model, tea.Cmd) {
 		}
 	}
 	return a, nil
+}
+
+// updateFilteredDatabases updates the filtered database list based on search query
+func (a *App) updateFilteredDatabases() {
+	query := strings.ToLower(a.model.SearchInput.Value())
+	if query == "" {
+		a.model.FilteredDatabases = a.model.Databases
+	} else {
+		filtered := make([]string, 0)
+		for _, db := range a.model.Databases {
+			if strings.Contains(strings.ToLower(db), query) {
+				filtered = append(filtered, db)
+			}
+		}
+		a.model.FilteredDatabases = filtered
+	}
+	a.updatePaginator()
+}
+
+// updatePaginator updates the paginator based on filtered database count
+func (a *App) updatePaginator() {
+	totalItems := len(a.model.FilteredDatabases)
+	if totalItems == 0 {
+		totalItems = 1 // Avoid division by zero
+	}
+
+	// SetTotalPages expects the total number of items, not pages
+	// It will calculate pages automatically based on PerPage
+	a.model.Paginator.SetTotalPages(totalItems)
+
+	// Ensure current page is valid
+	if a.model.Paginator.Page >= a.model.Paginator.TotalPages {
+		a.model.Paginator.Page = a.model.Paginator.TotalPages - 1
+	}
+	if a.model.Paginator.Page < 0 {
+		a.model.Paginator.Page = 0
+	}
+
+	// Reset cursor to valid position for current page
+	currentPageItems := a.getCurrentPageDatabases()
+	if a.model.Cursor >= len(currentPageItems) {
+		a.model.Cursor = 0
+	}
+}
+
+// getCurrentPageDatabases returns the databases for the current page
+func (a *App) getCurrentPageDatabases() []string {
+	totalItems := len(a.model.FilteredDatabases)
+	if totalItems == 0 {
+		return []string{}
+	}
+
+	start, end := a.model.Paginator.GetSliceBounds(totalItems)
+
+	// Safety check for bounds
+	if start < 0 {
+		start = 0
+	}
+	if end > totalItems {
+		end = totalItems
+	}
+	if start >= end {
+		return []string{}
+	}
+
+	return a.model.FilteredDatabases[start:end]
 }

@@ -1,7 +1,9 @@
 package types
 
 import (
+	"github.com/charmbracelet/bubbles/paginator"
 	"github.com/charmbracelet/bubbles/spinner"
+	"github.com/charmbracelet/bubbles/textinput"
 )
 
 // Screen represents the current screen/view
@@ -23,19 +25,34 @@ type BackupCompleteMsg struct {
 
 // Model represents the application state
 type Model struct {
-	Screen          Screen
-	Cursor          int
-	Options         []string
-	Databases       []string
-	Choices         map[int]string
-	DbHost          string
-	DbPort          string
-	DbUser          string
-	DbPassword      string
-	DbName          string
-	InputField      int // 0=host, 1=port, 2=user, 3=password, 4=dbname
-	Inputs          []string
-	Spinner         spinner.Model
+	// Screen navigation
+	Screen Screen
+	Cursor int
+
+	// Menu options
+	Options []string
+
+	// Database management
+	Databases         []string
+	FilteredDatabases []string
+	Choices           map[int]string
+
+	// Connection details
+	DbHost     string
+	DbPort     string
+	DbUser     string
+	DbPassword string
+	DbName     string
+	InputField int
+	Inputs     []string
+
+	// UI components
+	Spinner     spinner.Model
+	SearchInput textinput.Model
+	Paginator   paginator.Model
+	SearchMode  bool
+
+	// Backup status
 	BackupCompleted bool
 	BackupErrors    []string
 	BackupSuccess   int

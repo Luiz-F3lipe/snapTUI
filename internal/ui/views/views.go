@@ -69,11 +69,32 @@ func RenderDatabaseList(m types.Model) string {
 
 	s := centeredTitle + "\n\n"
 
-	for i, db := range m.Databases {
+	// Search box
+	searchBox := ""
+	if m.SearchMode {
+		searchBox = config.TextStyle.Render("🔍 ") + config.SelectedInputStyle.Render(m.SearchInput.View()) + config.TextStyle.Render(" [Esc] sair")
+	} else {
+		searchValue := m.SearchInput.Value()
+		if searchValue != "" {
+			searchBox = config.TextStyle.Render("🔍 ") + config.InputStyle.Render(searchValue) + config.TextStyle.Render(" [/] editar")
+		} else {
+			searchBox = config.TextStyle.Render("🔍 [/] pesquisar bancos")
+		}
+	}
+	s += searchBox + "\n\n"
+
+	// Get current page databases
+	currentPageDatabases := getCurrentPageDatabases(m)
+
+	// Show current database list
+	for i, db := range currentPageDatabases {
+		// Find original index for checking selections
+		originalIndex := getOriginalDatabaseIndex(m, db)
+
 		prefix := "  "
 		isChecked := false
 
-		if i == 0 {
+		if originalIndex == 0 {
 			// "All Databases" - check if all individual databases are selected
 			allSelected := true
 			for j := 1; j < len(m.Databases); j++ {
@@ -88,9 +109,9 @@ func RenderDatabaseList(m types.Model) string {
 			} else {
 				prefix = "[ ] "
 			}
-		} else {
+		} else if originalIndex > 0 {
 			// Individual databases
-			if _, ok := m.Choices[i]; ok {
+			if _, ok := m.Choices[originalIndex]; ok {
 				prefix = "[x] "
 				isChecked = true
 			} else {
@@ -114,9 +135,62 @@ func RenderDatabaseList(m types.Model) string {
 		s += "\n"
 	}
 
-	s += "\n[↑ ↓ | K J] Navegar   [Espaço] Selecionar   [Enter] Confirmar   [Esc] Voltar\n"
+	// Pagination info and controls
+	s += "\n"
+	if len(m.FilteredDatabases) > m.Paginator.PerPage {
+		currentStart := m.Paginator.Page*m.Paginator.PerPage + 1
+		currentEnd := min(m.Paginator.Page*m.Paginator.PerPage+m.Paginator.PerPage, len(m.FilteredDatabases))
+
+		s += config.TextStyle.Render(fmt.Sprintf("📄 Página %d de %d  |  Mostrando %d-%d de %d bancos",
+			m.Paginator.Page+1, m.Paginator.TotalPages, currentStart, currentEnd, len(m.FilteredDatabases))) + "\n\n"
+		s += config.TextStyle.Render("[← → ou H L] Páginas   [↑ ↓] Navegar   [Espaço] Selecionar   [/] Pesquisar   [Enter] Confirmar   [Esc] Voltar") + "\n"
+	} else {
+		s += config.TextStyle.Render(fmt.Sprintf("Total: %d bancos", len(m.FilteredDatabases))) + "\n"
+		s += config.TextStyle.Render("[↑ ↓] Navegar   [Espaço] Selecionar   [/] Pesquisar   [Enter] Confirmar   [Esc] Voltar") + "\n"
+	}
 
 	return s
+}
+
+// getCurrentPageDatabases returns the databases for the current page (helper for views)
+func getCurrentPageDatabases(m types.Model) []string {
+	totalItems := len(m.FilteredDatabases)
+	if totalItems == 0 {
+		return []string{}
+	}
+
+	start, end := m.Paginator.GetSliceBounds(totalItems)
+
+	// Safety check for bounds
+	if start < 0 {
+		start = 0
+	}
+	if end > totalItems {
+		end = totalItems
+	}
+	if start >= end {
+		return []string{}
+	}
+
+	return m.FilteredDatabases[start:end]
+}
+
+// getOriginalDatabaseIndex finds the original index of a database in the main list
+func getOriginalDatabaseIndex(m types.Model, db string) int {
+	for i, originalDB := range m.Databases {
+		if originalDB == db {
+			return i
+		}
+	}
+	return -1
+}
+
+// min returns the minimum of two integers
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }
 
 // RenderBackupProgress renders the backup progress and results screen
