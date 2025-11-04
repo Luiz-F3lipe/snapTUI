@@ -69,6 +69,15 @@ var (
 				Foreground(lipgloss.Color(ColorGreen)).
 				Bold(true).
 				Padding(0, 2)
+
+	// Search input styles (without purple background)
+	SearchInputStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.Color(ColorWhite)).
+				Padding(0, 1)
+
+	SearchInputActiveStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.Color(ColorPrimary)).
+				Padding(0, 1)
 )
 
 // Default values

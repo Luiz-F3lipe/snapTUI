@@ -52,6 +52,9 @@ type Model struct {
 	Paginator   paginator.Model
 	SearchMode  bool
 
+	// Connection status
+	ConnectionError string
+
 	// Backup status
 	BackupCompleted bool
 	BackupErrors    []string

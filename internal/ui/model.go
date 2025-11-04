@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/paginator"
@@ -36,10 +37,16 @@ func NewApp() *App {
 	ti.CharLimit = 40
 	ti.Width = 40
 
+	// Configure search input styles (remove purple background)
+	ti.PromptStyle = lipgloss.NewStyle()
+	ti.TextStyle = lipgloss.NewStyle().Foreground(lipgloss.Color(config.ColorWhite))
+	ti.PlaceholderStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
+	ti.Cursor.Style = lipgloss.NewStyle().Foreground(lipgloss.Color(config.ColorWhite))
+
 	// Initialize paginator
 	p := paginator.New()
 	p.Type = paginator.Arabic
-	p.PerPage = 15
+	p.PerPage = 10
 	p.ActiveDot = lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "235", Dark: "252"}).Render("•")
 	p.InactiveDot = lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "250", Dark: "238"}).Render("•")
 
@@ -61,6 +68,7 @@ func NewApp() *App {
 		SearchInput:       ti,
 		Paginator:         p,
 		SearchMode:        false,
+		ConnectionError:   "",
 		BackupCompleted:   false,
 		BackupErrors:      []string{},
 		BackupSuccess:     0,
@@ -147,26 +155,32 @@ func (a *App) handleConnectionKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "ctrl+c", "q":
 		return a, tea.Quit
-	case "up", "k":
+	case "up":
 		if a.model.InputField > 0 {
 			a.model.InputField--
 		}
-	case "down", "j":
+	case "down":
 		if a.model.InputField < 4 {
 			a.model.InputField++
 		}
 	case " ":
+		// Clear connection error when user clears a field
+		a.model.ConnectionError = ""
 		a.model.Inputs[a.model.InputField] = ""
 	case "tab":
 		a.model.InputField = (a.model.InputField + 1) % 5
 	case "enter":
+		// Clear previous connection error
+		a.model.ConnectionError = ""
+
 		// Try to connect and list databases
 		databases, err := a.dbService.ListDatabases(
 			a.model.Inputs[0], a.model.Inputs[1], a.model.Inputs[2],
 			a.model.Inputs[3], a.model.Inputs[4],
 		)
 		if err != nil {
-			// TODO: Show connection error
+			// Store connection error to show in the UI
+			a.model.ConnectionError = fmt.Sprintf("Erro de conexão: %v", err)
 			return a, nil
 		}
 		// Add "All Databases" at the beginning
@@ -181,6 +195,8 @@ func (a *App) handleConnectionKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		a.model.Cursor = 0
 	case "backspace":
 		if len(a.model.Inputs[a.model.InputField]) > 0 {
+			// Clear connection error when user starts editing
+			a.model.ConnectionError = ""
 			a.model.Inputs[a.model.InputField] = a.model.Inputs[a.model.InputField][:len(a.model.Inputs[a.model.InputField])-1]
 		}
 	case "esc":
@@ -189,6 +205,8 @@ func (a *App) handleConnectionKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	default:
 		// Add characters to current field
 		if len(msg.String()) == 1 {
+			// Clear connection error when user starts typing
+			a.model.ConnectionError = ""
 			a.model.Inputs[a.model.InputField] += msg.String()
 		}
 	}

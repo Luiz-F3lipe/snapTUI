@@ -39,10 +39,12 @@ func RenderConnection(m types.Model) string {
 
 	labels := []string{"Host:", "Port:", "User:", "Password:", "Database:"}
 
+	formPadding := "  " // Left padding for the form
+
 	for i, label := range labels {
-		s += config.TextStyle.Render(label) + "\n"
+		s += formPadding + config.TextStyle.Render(label) + "\n"
 		if i == m.InputField {
-			s += config.SelectedInputStyle.Render(m.Inputs[i])
+			s += formPadding + config.SelectedInputStyle.Render(m.Inputs[i])
 		} else {
 			// Mask password
 			value := m.Inputs[i]
@@ -52,9 +54,14 @@ func RenderConnection(m types.Model) string {
 					value = value[:j] + "*" + value[j+1:]
 				}
 			}
-			s += config.InputStyle.Render(value)
+			s += formPadding + config.InputStyle.Render(value)
 		}
 		s += "\n\n"
+	}
+
+	// Show connection error if any
+	if m.ConnectionError != "" {
+		s += config.ErrorStyle.Render("⚠️  "+m.ConnectionError) + "\n\n"
 	}
 
 	s += "\n[↑ ↓ tab] Navegar   [Espaço] Limpar   [Enter] Conectar   [Esc] Menu   [Q] Sair\n"
@@ -70,18 +77,16 @@ func RenderDatabaseList(m types.Model) string {
 	s := centeredTitle + "\n\n"
 
 	// Search box
-	searchBox := ""
 	if m.SearchMode {
-		searchBox = config.TextStyle.Render("🔍 ") + config.SelectedInputStyle.Render(m.SearchInput.View()) + config.TextStyle.Render(" [Esc] sair")
+		s += config.TextStyle.Render("🔍 Pesquisa: ") + config.SearchInputActiveStyle.Render(m.SearchInput.View()) + config.TextStyle.Render(" (Esc para sair)") + "\n\n"
 	} else {
 		searchValue := m.SearchInput.Value()
 		if searchValue != "" {
-			searchBox = config.TextStyle.Render("🔍 ") + config.InputStyle.Render(searchValue) + config.TextStyle.Render(" [/] editar")
+			s += config.TextStyle.Render("🔍 Filtro: ") + config.SearchInputStyle.Render(searchValue) + config.TextStyle.Render(" (/ para editar)") + "\n\n"
 		} else {
-			searchBox = config.TextStyle.Render("🔍 [/] pesquisar bancos")
+			s += config.TextStyle.Render("🔍 Pressione / para pesquisar") + "\n\n"
 		}
 	}
-	s += searchBox + "\n\n"
 
 	// Get current page databases
 	currentPageDatabases := getCurrentPageDatabases(m)
@@ -143,10 +148,10 @@ func RenderDatabaseList(m types.Model) string {
 
 		s += config.TextStyle.Render(fmt.Sprintf("📄 Página %d de %d  |  Mostrando %d-%d de %d bancos",
 			m.Paginator.Page+1, m.Paginator.TotalPages, currentStart, currentEnd, len(m.FilteredDatabases))) + "\n\n"
-		s += config.TextStyle.Render("[← → ou H L] Páginas   [↑ ↓] Navegar   [Espaço] Selecionar   [/] Pesquisar   [Enter] Confirmar   [Esc] Voltar") + "\n"
+		s += config.TextStyle.Render("[← → ou H L] Páginas   [↑ ↓ ou J K] Navegar   [Espaço] Selecionar   [/] Pesquisar   [Enter] Confirmar   [Esc] Voltar") + "\n"
 	} else {
 		s += config.TextStyle.Render(fmt.Sprintf("Total: %d bancos", len(m.FilteredDatabases))) + "\n"
-		s += config.TextStyle.Render("[↑ ↓] Navegar   [Espaço] Selecionar   [/] Pesquisar   [Enter] Confirmar   [Esc] Voltar") + "\n"
+		s += config.TextStyle.Render("[↑ ↓ ou J K] Navegar   [Espaço] Selecionar   [/] Pesquisar   [Enter] Confirmar   [Esc] Voltar") + "\n"
 	}
 
 	return s
